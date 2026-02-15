@@ -27,7 +27,9 @@ namespace VectorSkiesVR
         
         void Start()
         {
+            VSVRLog.Info("ShipModel", "Creating ship geometry");
             CreateShipGeometry();
+            VSVRLog.Info("ShipModel", $"Initialized - Dimensions: {length}x{width}x{height} | EngineGlow: {showEngineGlow}");
         }
         
         /// <summary>
@@ -35,6 +37,8 @@ namespace VectorSkiesVR
         /// </summary>
         private void CreateShipGeometry()
         {
+            VSVRLog.Verbose("ShipModel", "Building wireframe geometry");
+            
             shipMesh = new GameObject("ShipMesh");
             shipMesh.transform.parent = transform;
             shipMesh.transform.localPosition = Vector3.zero;
@@ -60,6 +64,7 @@ namespace VectorSkiesVR
             if (showEngineGlow)
             {
                 CreateEngineGlows();
+                VSVRLog.Verbose("ShipModel", "Engine glows created");
             }
         }
         

@@ -48,14 +48,21 @@ namespace VectorSkiesVR
         
         private float currentEnginePitch;
         private float currentWindVolume;
+        private static float lastAudioUpdateLogTime;
         
         void Start()
         {
+            VSVRLog.Info("AudioManager", "Initializing audio system");
+            
             InitializeAudioSources();
             
             if (flightController == null)
             {
                 flightController = FindObjectOfType<FlightController>();
+                if (flightController == null)
+                {
+                    VSVRLog.Warning("AudioManager", "FlightController not found - audio will not sync with speed");
+                }
             }
             
             StartEngineSound();
@@ -65,7 +72,7 @@ namespace VectorSkiesVR
                 PlayMusic();
             }
             
-            Debug.Log("[AudioManager] Initialized - Spatial audio enabled");
+            VSVRLog.Info("AudioManager", $"Initialized | SpatialBlend: {spatialBlend} | MusicVolume: {musicVolume}");
         }
         
         void Update()
@@ -79,6 +86,8 @@ namespace VectorSkiesVR
         /// </summary>
         private void InitializeAudioSources()
         {
+            VSVRLog.Verbose("AudioManager", "Creating audio sources");
+            
             // Create audio sources if not assigned
             if (engineSource == null)
             {
@@ -116,6 +125,8 @@ namespace VectorSkiesVR
             // Music is 2D
             musicSource.spatialBlend = 0f;
             musicSource.loop = true;
+            
+            VSVRLog.Verbose("AudioManager", "Audio sources configured");
         }
         
         /// <summary>
@@ -144,6 +155,12 @@ namespace VectorSkiesVR
                 
                 currentEnginePitch = minEnginePitch;
                 engineSource.pitch = currentEnginePitch;
+                
+                VSVRLog.Verbose("AudioManager", "Engine sound started");
+            }
+            else
+            {
+                VSVRLog.Warning("AudioManager", "Engine sound clip not assigned");
             }
             
             if (windSource != null && windLoopClip != null)
@@ -152,6 +169,8 @@ namespace VectorSkiesVR
                 windSource.loop = true;
                 windSource.volume = minWindVolume;
                 windSource.Play();
+                
+                VSVRLog.Verbose("AudioManager", "Wind sound started");
             }
         }
         
@@ -173,6 +192,13 @@ namespace VectorSkiesVR
             if (flightController.IsBoosting())
             {
                 engineSource.pitch *= 1.2f;
+            }
+            
+            // Rate-limited logging
+            if (Time.time - lastAudioUpdateLogTime >= 1f)
+            {
+                VSVRLog.Verbose("AudioManager", $"Engine pitch: {currentEnginePitch:F2} | Speed: {speedPercent * 100:F0}%");
+                lastAudioUpdateLogTime = Time.time;
             }
         }
         
@@ -199,9 +225,13 @@ namespace VectorSkiesVR
             if (effectsSource != null && boostSurgeClip != null)
             {
                 effectsSource.PlayOneShot(boostSurgeClip, 0.7f);
-                Debug.Log("[AudioManager] Boost sound played");
+                VSVRLog.Info("AudioManager", "Boost sound played");
                 
                 // TODO: Trigger controller haptic feedback
+            }
+            else
+            {
+                VSVRLog.Warning("AudioManager", "Boost sound clip not assigned");
             }
         }
         
@@ -214,7 +244,11 @@ namespace VectorSkiesVR
             {
                 effectsSource.transform.position = position;
                 effectsSource.PlayOneShot(collisionZapClip, 1f);
-                Debug.Log("[AudioManager] Collision sound played");
+                VSVRLog.Info("AudioManager", $"Collision sound played at {position}");
+            }
+            else
+            {
+                VSVRLog.Warning("AudioManager", "Collision sound clip not assigned");
             }
         }
         
@@ -227,7 +261,7 @@ namespace VectorSkiesVR
             {
                 effectsSource.transform.position = position;
                 effectsSource.PlayOneShot(ringPassClip, 0.8f);
-                Debug.Log("[AudioManager] Ring pass sound played");
+                VSVRLog.Verbose("AudioManager", "Ring pass sound played");
             }
         }
         
@@ -241,7 +275,11 @@ namespace VectorSkiesVR
                 musicSource.clip = synthwaveMusicClip;
                 musicSource.volume = musicVolume;
                 musicSource.Play();
-                Debug.Log("[AudioManager] Music started");
+                VSVRLog.Info("AudioManager", "Synthwave music started");
+            }
+            else
+            {
+                VSVRLog.Warning("AudioManager", "Music clip not assigned");
             }
         }
         
@@ -253,6 +291,7 @@ namespace VectorSkiesVR
             if (musicSource != null)
             {
                 musicSource.Stop();
+                VSVRLog.Info("AudioManager", "Music stopped");
             }
         }
         
@@ -266,6 +305,7 @@ namespace VectorSkiesVR
             {
                 musicSource.volume = musicVolume;
             }
+            VSVRLog.Verbose("AudioManager", $"Music volume set to {musicVolume:F2}");
         }
         
         /// <summary>
@@ -274,6 +314,7 @@ namespace VectorSkiesVR
         public void SetMasterVolume(float volume)
         {
             AudioListener.volume = Mathf.Clamp01(volume);
+            VSVRLog.Info("AudioManager", $"Master volume set to {AudioListener.volume:F2}");
         }
     }
 }

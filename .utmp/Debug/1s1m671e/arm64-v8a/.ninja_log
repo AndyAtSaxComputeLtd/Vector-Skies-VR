@@ -1,0 +1,10 @@
+# ninja log v5
+24	1117	7928037307250239	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	1f9f9a96d87d83fc
+38	1134	7928037307260238	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	10cb918e03c14db1
+17	1149	7928037307434043	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	15bc44dd5381dd96
+71	1151	7928037307494364	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	a57d636aaa883d77
+1	1153	7928037307600161	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	982c168256a2c584
+31	1269	7928037308745531	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	d73b393b01fabbc3
+9	1311	7928037309186862	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	5d9af39f3e85cae7
+47	1433	7928037310422318	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	2051bbfe8819c421
+1433	1613	7928037312233879	C:/Users/andre/Documents/Source/Quest/Vector-Skies-VR/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/Debug/1s1m671e/obj/arm64-v8a/libgame.so	307877b7e8509abd

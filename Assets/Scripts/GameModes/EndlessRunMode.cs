@@ -29,14 +29,25 @@ namespace VectorSkiesVR.GameModes
         private bool isGameActive;
         private float lastSpeedIncreaseTime;
         
+        // Rate limiting for logs
+        private static float lastStatusLogTime;
+        
         void Start()
         {
+            VSVRLog.Info("EndlessRunMode", "Initializing endless run mode");
+            
             if (flightController == null)
             {
                 flightController = FindObjectOfType<FlightController>();
+                if (flightController == null)
+                {
+                    VSVRLog.Error("EndlessRunMode", "FlightController not found!");
+                }
             }
             
             StartGame();
+            
+            VSVRLog.Info("EndlessRunMode", $"Initialized | StartSpeed: {startSpeed}m/s | MaxSpeed: {maxSpeed}m/s | IncreaseInterval: {speedIncreaseInterval}s");
         }
         
         void Update()
@@ -53,6 +64,13 @@ namespace VectorSkiesVR.GameModes
                 
                 // Update score based on distance
                 score = Mathf.FloorToInt(distanceTraveled * distanceMultiplier);
+            }
+            
+            // Rate-limited status logging
+            if (Time.time - lastStatusLogTime >= 5f)
+            {
+                VSVRLog.Verbose("EndlessRunMode", $"Score: {score} | Distance: {distanceTraveled:F1}m | Time: {gameTime:F1}s | NearMisses: {nearMisses}");
+                lastStatusLogTime = Time.time;
             }
             
             // Gradually increase difficulty
@@ -75,7 +93,7 @@ namespace VectorSkiesVR.GameModes
             nearMisses = 0;
             lastSpeedIncreaseTime = 0f;
             
-            Debug.Log("[EndlessRunMode] Game started!");
+            VSVRLog.Info("EndlessRunMode", "Game started!");
         }
         
         /// <summary>
@@ -84,7 +102,7 @@ namespace VectorSkiesVR.GameModes
         private void IncreaseSpeed()
         {
             // TODO: Communicate speed increase to FlightController
-            Debug.Log($"[EndlessRunMode] Speed increased at {gameTime:F1}s");
+            VSVRLog.Info("EndlessRunMode", $"Speed increased at {gameTime:F1}s");
         }
         
         /// <summary>
@@ -95,7 +113,7 @@ namespace VectorSkiesVR.GameModes
             nearMisses++;
             score += nearMissBonus;
             
-            Debug.Log($"[EndlessRunMode] Near miss! Bonus: +{nearMissBonus}");
+            VSVRLog.Info("EndlessRunMode", $"Near miss! Bonus: +{nearMissBonus} | Total NearMisses: {nearMisses}");
             
             // TODO: Trigger near miss VFX/audio
         }
@@ -105,6 +123,7 @@ namespace VectorSkiesVR.GameModes
         /// </summary>
         public void OnCollision(GameObject obstacle)
         {
+            VSVRLog.Warning("EndlessRunMode", $"Collision with {obstacle.name}!");
             GameOver();
         }
         
@@ -115,7 +134,7 @@ namespace VectorSkiesVR.GameModes
         {
             isGameActive = false;
             
-            Debug.Log($"[EndlessRunMode] Game Over! Final Score: {score}, Distance: {distanceTraveled:F1}m, Time: {gameTime:F1}s");
+            VSVRLog.Info("EndlessRunMode", $"Game Over! Final Score: {score} | Distance: {distanceTraveled:F1}m | Time: {gameTime:F1}s | NearMisses: {nearMisses}");
             
             // TODO: Show game over UI
         }

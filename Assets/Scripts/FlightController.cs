@@ -1,6 +1,8 @@
 using UnityEngine;
 using UnityEngine.XR;
 using UnityEngine.InputSystem;
+using XRInputDevice = UnityEngine.XR.InputDevice;
+using XRCommonUsages = UnityEngine.XR.CommonUsages;
 
 namespace VectorSkiesVR
 {
@@ -82,35 +84,55 @@ namespace VectorSkiesVR
         private void ReadInput()
         {
             // Read from XR Input (Quest controllers)
-            InputDevice leftController = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
-            InputDevice rightController = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+            XRInputDevice leftController = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
+            XRInputDevice rightController = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
             
             // Left stick: Pitch (Y) and Yaw (X)
-            if (leftController.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 leftStick))
+            if (leftController.TryGetFeatureValue(XRCommonUsages.primary2DAxis, out Vector2 leftStick))
             {
                 leftStickInput = leftStick;
             }
             
             // Right stick: Throttle (Y) and Roll (X)
-            if (rightController.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 rightStick))
+            if (rightController.TryGetFeatureValue(XRCommonUsages.primary2DAxis, out Vector2 rightStick))
             {
                 rightStickInput = rightStick;
             }
             
             // Right trigger: Boost
-            if (rightController.TryGetFeatureValue(CommonUsages.triggerButton, out bool triggerPressed))
+            if (rightController.TryGetFeatureValue(XRCommonUsages.triggerButton, out bool triggerPressed))
             {
                 boostInput = triggerPressed;
             }
             
-            // Debug input for testing without VR
+            // Debug input for testing without VR (using new Input System)
             #if UNITY_EDITOR
             if (!Application.isPlaying || !XRSettings.isDeviceActive)
             {
-                leftStickInput = new Vector2(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical"));
-                rightStickInput = new Vector2(Input.GetKey(KeyCode.Q) ? -1 : Input.GetKey(KeyCode.E) ? 1 : 0,
-                                             Input.GetKey(KeyCode.LeftShift) ? 1 : Input.GetKey(KeyCode.LeftControl) ? -1 : 0);
-                boostInput = Input.GetKey(KeyCode.Space);
+                // Use keyboard simulation instead of legacy Input
+                var keyboard = Keyboard.current;
+                if (keyboard != null)
+                {
+                    float horizontal = 0f;
+                    float vertical = 0f;
+                    
+                    if (keyboard.aKey.isPressed) horizontal -= 1f;
+                    if (keyboard.dKey.isPressed) horizontal += 1f;
+                    if (keyboard.wKey.isPressed) vertical += 1f;
+                    if (keyboard.sKey.isPressed) vertical -= 1f;
+                    
+                    leftStickInput = new Vector2(horizontal, vertical);
+                    
+                    float rollInput = 0f;
+                    float throttleInput = 0f;
+                    if (keyboard.qKey.isPressed) rollInput = -1f;
+                    if (keyboard.eKey.isPressed) rollInput = 1f;
+                    if (keyboard.leftShiftKey.isPressed) throttleInput = 1f;
+                    if (keyboard.leftCtrlKey.isPressed) throttleInput = -1f;
+                    
+                    rightStickInput = new Vector2(rollInput, throttleInput);
+                    boostInput = keyboard.spaceKey.isPressed;
+                }
             }
             #endif
         }

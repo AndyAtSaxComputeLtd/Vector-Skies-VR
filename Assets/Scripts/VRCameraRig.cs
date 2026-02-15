@@ -40,17 +40,25 @@ namespace VectorSkiesVR
         
         private Vector3 currentVelocity;
         private Quaternion targetRotation;
+        private static float lastCameraModeLogTime;
         
         void Start()
         {
+            VSVRLog.Info("VRCameraRig", "Initializing VR camera rig");
+            
             if (cameraTransform == null)
             {
                 cameraTransform = Camera.main?.transform;
+                if (cameraTransform == null)
+                {
+                    VSVRLog.Error("VRCameraRig", "Main camera not found!");
+                    return;
+                }
             }
             
             InitializeCameraMode();
             
-            Debug.Log($"[VRCameraRig] Initialized - Mode: {cameraMode}");
+            VSVRLog.Info("VRCameraRig", $"Initialized - Mode: {cameraMode} | StableHorizon: {enforceStableHorizon} | MaxPitch: {maxPitchAngle}");
         }
         
         void LateUpdate()
@@ -81,6 +89,8 @@ namespace VectorSkiesVR
         /// </summary>
         private void SetupExternalChase()
         {
+            VSVRLog.Verbose("VRCameraRig", "Setting up external chase camera");
+            
             if (shipModel != null)
             {
                 shipModel.SetActive(true); // Ship visible
@@ -97,6 +107,8 @@ namespace VectorSkiesVR
         /// </summary>
         private void SetupCockpit()
         {
+            VSVRLog.Verbose("VRCameraRig", "Setting up cockpit camera");
+            
             if (shipModel != null)
             {
                 shipModel.SetActive(false); // Ship not visible in cockpit view
@@ -214,7 +226,7 @@ namespace VectorSkiesVR
             {
                 cameraMode = mode;
                 InitializeCameraMode();
-                Debug.Log($"[VRCameraRig] Camera mode changed to: {mode}");
+                VSVRLog.Info("VRCameraRig", $"Camera mode changed to: {mode}");
             }
         }
         

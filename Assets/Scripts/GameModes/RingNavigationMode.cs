@@ -37,15 +37,27 @@ namespace VectorSkiesVR.GameModes
         private float timeRemaining;
         private bool isGameActive;
         
+        // Rate limiting for logs
+        private static float lastUpdateLogTime;
+        
         void Start()
         {
+            VSVRLog.Info("RingNavigationMode", "Initializing ring navigation mode");
+            
             if (playerTransform == null)
             {
                 playerTransform = Camera.main?.transform;
+                if (playerTransform == null)
+                {
+                    VSVRLog.Error("RingNavigationMode", "Player transform/camera not found!");
+                    return;
+                }
             }
             
             GenerateInitialRings();
             StartGame();
+            
+            VSVRLog.Info("RingNavigationMode", $"Initialized | RingSpacing: {ringSpacing}m | RingsAhead: {ringsAhead} | TimeLimit: {timeLimitPerRing}s");
         }
         
         void Update()
@@ -56,8 +68,16 @@ namespace VectorSkiesVR.GameModes
             timeRemaining -= Time.deltaTime;
             if (timeRemaining <= 0)
             {
+                VSVRLog.Warning("RingNavigationMode", "Time ran out!");
                 GameOver();
                 return;
+            }
+            
+            // Rate-limited status logging
+            if (Time.time - lastUpdateLogTime >= 5f)
+            {
+                VSVRLog.Verbose("RingNavigationMode", $"Score: {score} | Rings: {ringsPassed} | Time: {timeRemaining:F1}s | ActiveRing: {currentRingIndex}");
+                lastUpdateLogTime = Time.time;
             }
             
             CheckRingProgress();
@@ -69,6 +89,7 @@ namespace VectorSkiesVR.GameModes
         /// </summary>
         private void GenerateInitialRings()
         {
+            VSVRLog.Verbose("RingNavigationMode", $"Generating initial {ringsAhead} rings");
             for (int i = 0; i < ringsAhead; i++)
             {
                 CreateRing(i);
@@ -93,6 +114,8 @@ namespace VectorSkiesVR.GameModes
             ring.isActive = (index == 0);
             
             rings.Add(ring);
+            
+            VSVRLog.Verbose("RingNavigationMode", $"Ring {index} created at {ring.position}");
             
             UpdateRingAppearance(ring);
         }
@@ -219,7 +242,7 @@ namespace VectorSkiesVR.GameModes
             if (distanceFromCenter < perfectRingDistance)
             {
                 points += perfectRingBonus;
-                Debug.Log("[RingNavigationMode] Perfect ring pass!");
+                VSVRLog.Info("RingNavigationMode", "Perfect ring pass!");
             }
             
             // Add time bonus
@@ -229,7 +252,7 @@ namespace VectorSkiesVR.GameModes
             score += points;
             timeRemaining += timeLimitPerRing; // Add time for next ring
             
-            Debug.Log($"[RingNavigationMode] Ring passed! +{points} points");
+            VSVRLog.Info("RingNavigationMode", $"Ring passed! Points: +{points} | Total Score: {score} | Distance: {distanceFromCenter:F1}m");
             
             // Move to next ring
             currentRingIndex++;
@@ -257,7 +280,7 @@ namespace VectorSkiesVR.GameModes
         private void MissedRing(NavigationRing ring)
         {
             ring.isPassed = true;
-            Debug.Log("[RingNavigationMode] Ring missed!");
+            VSVRLog.Warning("RingNavigationMode", $"Ring {ring.index} missed! -5s penalty");
             
             // Penalty: lose some time
             timeRemaining -= 5f;
@@ -311,7 +334,7 @@ namespace VectorSkiesVR.GameModes
             currentRingIndex = 0;
             timeRemaining = timeLimitPerRing;
             
-            Debug.Log("[RingNavigationMode] Game started!");
+            VSVRLog.Info("RingNavigationMode", "Game started!");
         }
         
         /// <summary>
@@ -320,7 +343,7 @@ namespace VectorSkiesVR.GameModes
         private void GameOver()
         {
             isGameActive = false;
-            Debug.Log($"[RingNavigationMode] Game Over! Score: {score}, Rings: {ringsPassed}");
+            VSVRLog.Info("RingNavigationMode", $"Game Over! Final Score: {score} | Rings Passed: {ringsPassed} | Time: {timeRemaining:F1}s");
         }
         
         /// <summary>
@@ -355,6 +378,7 @@ namespace VectorSkiesVR.GameModes
         {
             if (other.CompareTag("Player"))
             {
+                VSVRLog.Verbose("RingTrigger", "Player entered ring trigger");
                 navigationMode?.RingPassed(gameObject);
             }
         }
