@@ -244,73 +244,91 @@ namespace VectorSkiesVR.ProceduralCity
         }
         
         /// <summary>
-        /// Generate a single building within a grid block
+        /// Generate 1-4 buildings within a grid block arranged in columns
         /// </summary>
         private void GenerateBuildingInBlock(CityChunk chunk, float blockX, float blockZ)
         {
-            // Random building shape
-            WireframeTower.BuildingShape shape = GetRandomBuildingShape();
+            // Randomly choose how many buildings wide (columns) this block will have
+            int buildingsWide = Random.Range(1, 5); // 1 to 4 buildings
             
-            // Random dimensions that fit within the block
-            float maxWidth = blockSize - (buildingPadding * 2);
-            float maxDepth = blockSize - (buildingPadding * 2);
+            // Calculate space available per building
+            float availableWidth = blockSize - (buildingPadding * 2);
+            float buildingSpacing = 1.5f; // Small gap between buildings
+            float widthPerBuilding = (availableWidth - (buildingSpacing * (buildingsWide - 1))) / buildingsWide;
             
-            float width, depth;
-            
-            switch (shape)
+            // Generate each building in the row
+            for (int i = 0; i < buildingsWide; i++)
             {
-                case WireframeTower.BuildingShape.Square:
-                    // Equal width and depth
-                    float size = Random.Range(minTowerWidth, Mathf.Min(maxTowerWidth, maxWidth, maxDepth));
-                    width = size;
-                    depth = size;
-                    break;
-                    
-                case WireframeTower.BuildingShape.Rectangle:
-                    // Different width and depth
-                    width = Random.Range(minTowerWidth, Mathf.Min(maxTowerWidth, maxWidth));
-                    depth = Random.Range(minTowerWidth, Mathf.Min(maxTowerWidth, maxDepth));
-                    // Ensure it's actually rectangular (not square)
-                    if (Mathf.Abs(width - depth) < 2f)
-                    {
-                        if (width > depth) width += 3f;
-                        else depth += 3f;
-                    }
-                    break;
-                    
-                case WireframeTower.BuildingShape.Rhomboid:
-                default:
-                    // Rhomboid uses similar dimensions to rectangle
-                    width = Random.Range(minTowerWidth, Mathf.Min(maxTowerWidth, maxWidth));
-                    depth = Random.Range(minTowerWidth, Mathf.Min(maxTowerWidth, maxDepth));
-                    break;
+                // Random building shape
+                WireframeTower.BuildingShape shape = GetRandomBuildingShape();
+                
+                // Calculate position for this building
+                float localX = buildingPadding + (i * (widthPerBuilding + buildingSpacing)) + (widthPerBuilding * 0.5f);
+                
+                // Random dimensions that fit within the subdivided space
+                float maxWidth = widthPerBuilding;
+                float maxDepth = blockSize - (buildingPadding * 2);
+                
+                float width, depth;
+                
+                switch (shape)
+                {
+                    case WireframeTower.BuildingShape.Square:
+                        // Equal width and depth
+                        float size = Random.Range(minTowerWidth, Mathf.Min(maxTowerWidth, maxWidth, maxDepth));
+                        width = Mathf.Min(size, maxWidth);
+                        depth = Mathf.Min(size, maxDepth);
+                        break;
+                        
+                    case WireframeTower.BuildingShape.Rectangle:
+                        // Different width and depth
+                        width = Random.Range(minTowerWidth * 0.6f, Mathf.Min(maxTowerWidth, maxWidth));
+                        depth = Random.Range(minTowerWidth, Mathf.Min(maxTowerWidth, maxDepth));
+                        // Ensure it's actually rectangular (not square)
+                        if (Mathf.Abs(width - depth) < 2f)
+                        {
+                            if (width > depth && depth < maxDepth - 3f) depth += 3f;
+                            else if (width < maxWidth - 3f) width += 3f;
+                        }
+                        break;
+                        
+                    case WireframeTower.BuildingShape.Rhomboid:
+                    default:
+                        // Rhomboid uses similar dimensions to rectangle
+                        width = Random.Range(minTowerWidth * 0.6f, Mathf.Min(maxTowerWidth, maxWidth));
+                        depth = Random.Range(minTowerWidth, Mathf.Min(maxTowerWidth, maxDepth));
+                        break;
+                }
+                
+                // Random height
+                float height = Random.Range(minTowerHeight, maxTowerHeight);
+                
+                // Position building in block with more vertical variation
+                // Each building can be placed anywhere within the block depth
+                float minZ = blockZ + buildingPadding + (depth * 0.5f);
+                float maxZ = blockZ + blockSize - buildingPadding - (depth * 0.5f);
+                float randomZ = Random.Range(minZ, maxZ);
+                
+                Vector3 position = new Vector3(
+                    blockX + localX,
+                    roadDepth, // Buildings at street level, roads are trenches below
+                    randomZ
+                );
+                
+                // Determine color type
+                WireframeTower.TowerColor colorType = GetRandomTowerColor();
+                
+                // Create building
+                GameObject towerObj = Instantiate(towerPrefab, position, Quaternion.identity, chunk.chunkObject.transform);
+                towerObj.SetActive(true);
+                towerObj.name = $"Building_{shape}_{colorType}_{chunk.towers.Count}";
+                
+                WireframeTower tower = towerObj.GetComponent<WireframeTower>();
+                tower.Initialize(width, height, depth, colorType, shape);
+                tower.SetMaterial(wireframeMaterial);
+                
+                chunk.towers.Add(towerObj);
             }
-            
-            // Random height
-            float height = Random.Range(minTowerHeight, maxTowerHeight);
-            
-            // Center building in block (raised above road level)
-            float offsetX = Random.Range(-1f, 1f); // Small random offset for variety
-            float offsetZ = Random.Range(-1f, 1f);
-            Vector3 position = new Vector3(
-                blockX + (blockSize * 0.5f) + offsetX,
-                roadDepth, // Buildings at street level, roads are trenches below
-                blockZ + (blockSize * 0.5f) + offsetZ
-            );
-            
-            // Determine color type
-            WireframeTower.TowerColor colorType = GetRandomTowerColor();
-            
-            // Create building
-            GameObject towerObj = Instantiate(towerPrefab, position, Quaternion.identity, chunk.chunkObject.transform);
-            towerObj.SetActive(true);
-            towerObj.name = $"Building_{shape}_{colorType}_{chunk.towers.Count}";
-            
-            WireframeTower tower = towerObj.GetComponent<WireframeTower>();
-            tower.Initialize(width, height, depth, colorType, shape);
-            tower.SetMaterial(wireframeMaterial);
-            
-            chunk.towers.Add(towerObj);
         }
         
         /// <summary>
