@@ -1,48 +1,67 @@
 using UnityEngine;
-using UnityEngine.XR;
 using UnityEngine.InputSystem;
-using XRInputDevice = UnityEngine.XR.InputDevice;
-using XRCommonUsages = UnityEngine.XR.CommonUsages;
 
 namespace VectorSkiesVR
 {
     /// <summary>
-    /// Seated VR flight controller for Vector Skies VR
-    /// Controls: Left stick = Pitch/Yaw, Right stick = Throttle/Roll
-    /// NO CAMERA ROLL - stable horizon enforced for VR comfort
+    /// FPV Drone flight controller with realistic physics
+    /// Mode 2 Controls: Left = Throttle/Yaw, Right = Pitch/Roll
+    /// Uses physics-based simulation with gravity, thrust, and mass
     /// </summary>
+    [RequireComponent(typeof(Rigidbody))]
     public class FlightController : MonoBehaviour
     {
-        [Header("Flight Physics")]
-        [SerializeField] private float baseSpeed = 20f;
-        [SerializeField] private float maxSpeed = 60f;
-        [SerializeField] private float minSpeed = 5f;
-        [SerializeField] private float acceleration = 5f;
-        [SerializeField] private float deceleration = 3f;
+        public enum ControlMode
+        {
+            Mode1, // Left: Pitch/Yaw, Right: Throttle/Roll
+            Mode2  // Left: Throttle/Yaw, Right: Pitch/Roll (Standard FPV)
+        }
         
-        [Header("Rotation Settings")]
-        [SerializeField] private float pitchSpeed = 40f;
-        [SerializeField] private float yawSpeed = 50f;
-        [SerializeField] private float rollSpeed = 20f; // Cosmetic only
-        [SerializeField] private float maxRollAngle = 25f; // Limited banking
+        [Header("Control Settings")]
+        [SerializeField] private ControlMode controlMode = ControlMode.Mode2;
+        
+        [Header("Drone Physical Properties")]
+        [SerializeField] private float mass = 0.75f; // 750g - typical 5" racing drone
+        [SerializeField] private float dragCoefficient = 0.5f; // Air resistance
+        [SerializeField] private float angularDrag = 2f; // Rotational resistance
+        
+        [Header("Motor & Thrust")]
+        [SerializeField] private float maxThrust = 25f; // N (Newtons) - ~2500g total thrust (3.3:1 thrust-to-weight)
+        [SerializeField] private float minThrust = 0f; // Idle thrust
+        [SerializeField] private float throttleResponse = 8f; // How fast throttle responds
+        
+        [Header("Angular Rates (deg/s)")]
+        [SerializeField] private float maxPitchRate = 600f; // Degrees per second
+        [SerializeField] private float maxRollRate = 600f;
+        [SerializeField] private float maxYawRate = 400f;
+        [SerializeField] private float angularAcceleration = 10f; // How fast rotation builds up
+        
+        [Header("Tilt Limits")]
+        [SerializeField] private float maxTiltAngle = 60f; // Maximum pitch/roll angle
+        [SerializeField] private bool limitTilt = true; // Enable angle mode (vs acro mode)
         
         [Header("Boost Settings")]
-        [SerializeField] private float boostMultiplier = 1.8f;
+        [SerializeField] private float boostThrustMultiplier = 1.5f;
         [SerializeField] private float boostDuration = 2f;
         [SerializeField] private float boostCooldown = 4f;
         
-        [Header("Smoothing")]
-        [SerializeField] private float accelerationSmoothing = 2f;
-        [SerializeField] private float rotationSmoothing = 3f;
-        [SerializeField] private float rollReturnSpeed = 4f;
+        [Header("Speed Reference (for UI/Audio)")]
+        [SerializeField] private float expectedMinSpeed = 5f; // m/s - hovering speed
+        [SerializeField] private float expectedMaxSpeed = 60f; // m/s - full throttle terminal velocity
+        
+        [Header("Input Actions (XR Controllers)")]
+        [SerializeField] private InputActionReference leftStickAction;
+        [SerializeField] private InputActionReference rightStickAction;
+        [SerializeField] private InputActionReference boostAction;
+        
+        // Components
+        private Rigidbody rb;
+        private Transform cameraTransform;
         
         // Current state
-        private float currentSpeed;
-        private float targetSpeed;
-        private float currentPitch;
-        private float currentYaw;
-        private float currentRoll;
-        private float targetRoll;
+        private float currentThrottle;
+        private float targetThrottle;
+        private Vector3 angularVelocity; // Current rotation rates
         
         // Boost state
         private bool isBoosting;
@@ -54,87 +73,170 @@ namespace VectorSkiesVR
         private Vector2 rightStickInput;
         private bool boostInput;
         
-        // Transform references
-        private Transform shipTransform;
-        private Transform cameraTransform;
+        // Debug
+        private float inputLogTimer;
+        private float physicsLogTimer;
+        
+        void Awake()
+        {
+            InitializeComponents();
+        }
         
         void Start()
         {
-            shipTransform = transform;
             cameraTransform = Camera.main?.transform;
             
-            currentSpeed = baseSpeed;
-            targetSpeed = baseSpeed;
+            // Enable input actions
+            if (leftStickAction?.action != null) leftStickAction.action.Enable();
+            if (rightStickAction?.action != null) rightStickAction.action.Enable();
+            if (boostAction?.action != null) boostAction.action.Enable();
             
-            Debug.Log("[FlightController] Initialized - Seated VR Mode");
+            Debug.Log($"[FlightController] Initialized - FPV Physics Mode - Mass: {mass}kg, Max Thrust: {maxThrust}N");
+            Debug.Log($"[FlightController] Starting Position: {transform.position} | Rotation: {transform.eulerAngles}");
+            Debug.Log($"[FlightController] Rigidbody - UseGravity: {rb.useGravity} | IsKinematic: {rb.isKinematic} | Constraints: {rb.constraints}");
+            Debug.Log($"[FlightController] Input Actions - Left: {(leftStickAction != null)} | Right: {(rightStickAction != null)} | Boost: {(boostAction != null)}");
+        }
+        
+        private void InitializeComponents()
+        {
+            rb = GetComponent<Rigidbody>();
+            if (rb == null)
+            {
+                rb = gameObject.AddComponent<Rigidbody>();
+            }
+            
+            // Configure rigidbody for drone physics
+            rb.mass = mass;
+            rb.useGravity = true; // Let Unity handle gravity (-9.81 m/s²)
+            rb.linearDamping = dragCoefficient;
+            rb.angularDamping = angularDrag;
+            rb.interpolation = RigidbodyInterpolation.Interpolate; // Smooth for VR
+            rb.constraints = RigidbodyConstraints.None; // Free flight
         }
         
         void Update()
         {
             ReadInput();
             UpdateBoost();
-            UpdateSpeed();
-            UpdateRotation();
-            ApplyMovement();
+        }
+        
+        void FixedUpdate()
+        {
+            // Physics calculations happen in FixedUpdate for stability
+            ApplyThrust();
+            ApplyRotation();
+            ApplyTiltLimits();
+            
+            // Rate-limited physics logging
+            physicsLogTimer += Time.fixedDeltaTime;
+            if (physicsLogTimer >= 1f)
+            {
+                physicsLogTimer = 0f;
+                Debug.Log($"[Physics] Velocity: {rb.linearVelocity.magnitude:F2} m/s | Pos: {transform.position} | Throttle: {currentThrottle:F2} | IsKinematic: {rb.isKinematic}");
+            }
         }
         
         /// <summary>
         /// Read controller input from XR controllers
+        /// Stick assignments vary based on control mode
         /// </summary>
         private void ReadInput()
         {
-            // Read from XR Input (Quest controllers)
-            XRInputDevice leftController = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
-            XRInputDevice rightController = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
-            
-            // Left stick: Pitch (Y) and Yaw (X)
-            if (leftController.TryGetFeatureValue(XRCommonUsages.primary2DAxis, out Vector2 leftStick))
+            // Read from Input Actions (works with OpenXR on Quest 3)
+            if (leftStickAction != null && leftStickAction.action != null)
             {
-                leftStickInput = leftStick;
+                leftStickInput = leftStickAction.action.ReadValue<Vector2>();
             }
             
-            // Right stick: Throttle (Y) and Roll (X)
-            if (rightController.TryGetFeatureValue(XRCommonUsages.primary2DAxis, out Vector2 rightStick))
+            if (rightStickAction != null && rightStickAction.action != null)
             {
-                rightStickInput = rightStick;
+                rightStickInput = rightStickAction.action.ReadValue<Vector2>();
             }
             
-            // Right trigger: Boost
-            if (rightController.TryGetFeatureValue(XRCommonUsages.triggerButton, out bool triggerPressed))
+            if (boostAction != null && boostAction.action != null)
             {
-                boostInput = triggerPressed;
+                boostInput = boostAction.action.ReadValue<float>() > 0.5f;
             }
+            
+            // Log input action status once per second
+            if (inputLogTimer < Time.deltaTime)
+            {
+                bool leftEnabled = leftStickAction?.action?.enabled ?? false;
+                bool rightEnabled = rightStickAction?.action?.enabled ?? false;
+                bool boostEnabled = boostAction?.action?.enabled ?? false;
+                Debug.Log($"[Input Actions] Left: {(leftStickAction != null ? "Assigned" : "NULL")} (Enabled: {leftEnabled}) | Right: {(rightStickAction != null ? "Assigned" : "NULL")} (Enabled: {rightEnabled}) | Boost: {(boostAction != null ? "Assigned" : "NULL")} (Enabled: {boostEnabled})");
+            }
+            
+            // Debug input for testing without VR or in editor (using keyboard)
+            #if UNITY_EDITOR
+            var keyboard = Keyboard.current;
+            if (keyboard != null && (leftStickAction == null || rightStickAction == null))
+            {
+                if (controlMode == ControlMode.Mode2)
+                {
+                    // Mode 2: Left = Throttle/Yaw, Right = Pitch/Roll
+                    float yawInput = 0f;
+                    float throttleInput = 0f;
+                    if (keyboard.aKey.isPressed) yawInput -= 1f;
+                    if (keyboard.dKey.isPressed) yawInput += 1f;
+                    if (keyboard.leftShiftKey.isPressed) throttleInput = 1f;
+                    if (keyboard.leftCtrlKey.isPressed) throttleInput = -1f;
+                    leftStickInput = new Vector2(yawInput, throttleInput);
+                    
+                    // WS = Pitch, QE = Roll
+                    float pitchInput = 0f;
+                    float rollInput = 0f;
+                    if (keyboard.wKey.isPressed) pitchInput += 1f;
+                    if (keyboard.sKey.isPressed) pitchInput -= 1f;
+                    if (keyboard.qKey.isPressed) rollInput = -1f;
+                    if (keyboard.eKey.isPressed) rollInput = 1f;
+                    rightStickInput = new Vector2(rollInput, pitchInput);
+                }
+                
+                boostInput = keyboard.spaceKey.isPressed;
+            }
+            #endif
             
             // Debug input for testing without VR (using new Input System)
             #if UNITY_EDITOR
             if (!Application.isPlaying || !XRSettings.isDeviceActive)
             {
-                // Use keyboard simulation instead of legacy Input
                 var keyboard = Keyboard.current;
                 if (keyboard != null)
                 {
-                    float horizontal = 0f;
-                    float vertical = 0f;
+                    if (controlMode == ControlMode.Mode2)
+                    {
+                        // Mode 2: Left = Throttle/Yaw, Right = Pitch/Roll
+                        float yawInput = 0f;
+                        float throttleInput = 0f;
+                        if (keyboard.aKey.isPressed) yawInput -= 1f;
+                        if (keyboard.dKey.isPressed) yawInput += 1f;
+                        if (keyboard.leftShiftKey.isPressed) throttleInput = 1f;
+                        if (keyboard.leftCtrlKey.isPressed) throttleInput = -1f;
+                        leftStickInput = new Vector2(yawInput, throttleInput);
+                        
+                        // WS = Pitch, QE = Roll
+                        float pitchInput = 0f;
+                        float rollInput = 0f;
+                        if (keyboard.wKey.isPressed) pitchInput += 1f;
+                        if (keyboard.sKey.isPressed) pitchInput -= 1f;
+                        if (keyboard.qKey.isPressed) rollInput = -1f;
+                        if (keyboard.eKey.isPressed) rollInput = 1f;
+                        rightStickInput = new Vector2(rollInput, pitchInput);
+                    }
                     
-                    if (keyboard.aKey.isPressed) horizontal -= 1f;
-                    if (keyboard.dKey.isPressed) horizontal += 1f;
-                    if (keyboard.wKey.isPressed) vertical += 1f;
-                    if (keyboard.sKey.isPressed) vertical -= 1f;
-                    
-                    leftStickInput = new Vector2(horizontal, vertical);
-                    
-                    float rollInput = 0f;
-                    float throttleInput = 0f;
-                    if (keyboard.qKey.isPressed) rollInput = -1f;
-                    if (keyboard.eKey.isPressed) rollInput = 1f;
-                    if (keyboard.leftShiftKey.isPressed) throttleInput = 1f;
-                    if (keyboard.leftCtrlKey.isPressed) throttleInput = -1f;
-                    
-                    rightStickInput = new Vector2(rollInput, throttleInput);
                     boostInput = keyboard.spaceKey.isPressed;
                 }
             }
             #endif
+            
+            // Rate-limited input logging (1 per second)
+            inputLogTimer += Time.deltaTime;
+            if (inputLogTimer >= 1f)
+            {
+                inputLogTimer = 0f;
+                Debug.Log($"[FlightController Input] Left: {leftStickInput} | Right: {rightStickInput} | Boost: {boostInput} | Mode: {controlMode}");
+            }
         }
         
         /// <summary>
@@ -154,9 +256,6 @@ namespace VectorSkiesVR
                 isBoosting = true;
                 boostTimer = boostDuration;
                 Debug.Log("[FlightController] Boost activated!");
-                
-                // TODO: Trigger boost VFX and audio
-                // TODO: Trigger controller haptics
             }
             
             // Update boost
@@ -173,89 +272,122 @@ namespace VectorSkiesVR
         }
         
         /// <summary>
-        /// Update speed based on throttle input and boost
+        /// Apply thrust force based on throttle input
+        /// Thrust is directed upward relative to drone orientation
         /// </summary>
-        private void UpdateSpeed()
+        private void ApplyThrust()
         {
-            // Throttle control from right stick Y
-            float throttleInput = rightStickInput.y;
+            // Get throttle input (0 to 1 range)
+            float throttleInput = (controlMode == ControlMode.Mode1) 
+                ? rightStickInput.y 
+                : leftStickInput.y;
             
-            // Calculate target speed
-            if (throttleInput > 0)
+            // Convert from -1,1 to 0,1 range
+            float throttle = (throttleInput + 1f) * 0.5f;
+            
+            // Smooth throttle response
+            targetThrottle = throttle;
+            currentThrottle = Mathf.Lerp(currentThrottle, targetThrottle, throttleResponse * Time.fixedDeltaTime);
+            
+            // Calculate thrust force (in Newtons)
+            float thrust = Mathf.Lerp(minThrust, maxThrust, currentThrottle);
+            
+            // Apply boost multiplier
+            if (isBoosting)
             {
-                targetSpeed = Mathf.Lerp(baseSpeed, maxSpeed, throttleInput);
+                thrust *= boostThrustMultiplier;
             }
-            else if (throttleInput < 0)
+            
+            // Apply upward thrust force relative to drone's orientation
+            // This, combined with gravity, creates realistic flight dynamics
+            Vector3 thrustForce = transform.up * thrust;
+            rb.AddForce(thrustForce, ForceMode.Force);
+            
+            // Debug log first time throttle changes significantly
+            if (Mathf.Abs(throttleInput) > 0.1f && inputLogTimer < 0.5f)
             {
-                targetSpeed = Mathf.Lerp(baseSpeed, minSpeed, -throttleInput);
+                Debug.Log($"[Thrust] Input: {throttleInput:F2} -> Throttle: {currentThrottle:F2} -> Thrust: {thrust:F2}N | Force: {thrustForce}");
+            }
+        }
+        
+        /// <summary>
+        /// Apply rotational torques based on stick input
+        /// Simulates motor differential thrust for rotation
+        /// </summary>
+        private void ApplyRotation()
+        {
+            float pitchInput, yawInput, rollInput;
+            
+            if (controlMode == ControlMode.Mode2)
+            {
+                // Mode 2: Right stick = Pitch/Roll, Left stick X = Yaw
+                pitchInput = -rightStickInput.y; // Inverted for natural feel
+                yawInput = leftStickInput.x;
+                rollInput = rightStickInput.x;
             }
             else
             {
-                targetSpeed = baseSpeed;
+                // Mode 1: Left stick = Pitch/Yaw, Right stick X = Roll
+                pitchInput = -leftStickInput.y;
+                yawInput = leftStickInput.x;
+                rollInput = rightStickInput.x;
             }
             
-            // Apply boost multiplier
-            float finalTargetSpeed = isBoosting ? targetSpeed * boostMultiplier : targetSpeed;
+            // Target angular velocities in degrees per second
+            Vector3 targetAngularVelocity = new Vector3(
+                pitchInput * maxPitchRate,
+                yawInput * maxYawRate,
+                rollInput * maxRollRate
+            );
             
-            // Smooth acceleration
-            float accelRate = (finalTargetSpeed > currentSpeed) ? acceleration : deceleration;
-            currentSpeed = Mathf.Lerp(currentSpeed, finalTargetSpeed, accelRate * accelerationSmoothing * Time.deltaTime);
+            // Smooth angular acceleration
+            angularVelocity = Vector3.Lerp(angularVelocity, targetAngularVelocity, angularAcceleration * Time.fixedDeltaTime);
+            
+            // Convert degrees/second to radians/second and apply
+            Vector3 angularVelocityRad = angularVelocity * Mathf.Deg2Rad;
+            rb.angularVelocity = transform.TransformDirection(angularVelocityRad);
         }
         
         /// <summary>
-        /// Update rotation with MANDATORY stable horizon (no camera roll)
+        /// Limit tilt angles for angle mode (stabilized flight)
+        /// Disable for acro mode (unlimited flips)
         /// </summary>
-        private void UpdateRotation()
+        private void ApplyTiltLimits()
         {
-            // Pitch and Yaw from left stick
-            float pitchInput = -leftStickInput.y; // Inverted for natural feel
-            float yawInput = leftStickInput.x;
+            if (!limitTilt) return;
             
-            // Roll from right stick (COSMETIC ONLY - visual banking effect)
-            float rollInput = rightStickInput.x;
-            targetRoll = rollInput * maxRollAngle;
+            // Get current euler angles
+            Vector3 currentRotation = transform.eulerAngles;
             
-            // Apply rotation changes with smoothing
-            currentPitch += pitchInput * pitchSpeed * Time.deltaTime;
-            currentYaw += yawInput * yawSpeed * Time.deltaTime;
+            // Normalize angles to -180 to 180 range
+            float pitch = NormalizeAngle(currentRotation.x);
+            float roll = NormalizeAngle(currentRotation.z);
             
-            // Smooth roll banking (purely visual)
-            currentRoll = Mathf.Lerp(currentRoll, targetRoll, rollReturnSpeed * Time.deltaTime);
+            // Limit pitch and roll
+            pitch = Mathf.Clamp(pitch, -maxTiltAngle, maxTiltAngle);
+            roll = Mathf.Clamp(roll, -maxTiltAngle, maxTiltAngle);
             
-            // CRITICAL: Apply rotation to ship only, NEVER to camera parent
-            // This keeps the horizon stable for VR comfort
-            if (shipTransform != null)
-            {
-                // Ship can have cosmetic roll for visual feedback
-                Quaternion shipRotation = Quaternion.Euler(currentPitch, currentYaw, currentRoll);
-                shipTransform.rotation = Quaternion.Slerp(shipTransform.rotation, shipRotation, rotationSmoothing * Time.deltaTime);
-            }
-            
-            // Ensure camera maintains stable horizon (no roll on camera parent)
-            if (cameraTransform != null && cameraTransform.parent != shipTransform)
-            {
-                // Camera follows pitch and yaw but NEVER rolls
-                Quaternion cameraRotation = Quaternion.Euler(currentPitch, currentYaw, 0f);
-                cameraTransform.parent.rotation = Quaternion.Slerp(cameraTransform.parent.rotation, cameraRotation, rotationSmoothing * Time.deltaTime);
-            }
+            // Apply limited rotation
+            transform.rotation = Quaternion.Euler(pitch, currentRotation.y, roll);
         }
         
         /// <summary>
-        /// Apply forward movement
+        /// Normalize angle to -180 to 180 range
         /// </summary>
-        private void ApplyMovement()
+        private float NormalizeAngle(float angle)
         {
-            // Move forward based on current speed
-            Vector3 movement = transform.forward * currentSpeed * Time.deltaTime;
-            transform.position += movement;
+            if (angle > 180f) angle -= 360f;
+            return angle;
         }
         
         /// <summary>
         /// Public getters for other systems
         /// </summary>
-        public float GetCurrentSpeed() => currentSpeed;
-        public float GetSpeedPercent() => (currentSpeed - minSpeed) / (maxSpeed - minSpeed);
+        public float GetCurrentThrottle() => currentThrottle;
+        public Vector3 GetVelocity() => rb.linearVelocity;
+        public float GetSpeed() => rb.linearVelocity.magnitude;
+        public float GetCurrentSpeed() => GetSpeed(); // Legacy compatibility
+        public float GetSpeedPercent() => Mathf.Clamp01((GetSpeed() - expectedMinSpeed) / (expectedMaxSpeed - expectedMinSpeed));
         public bool IsBoosting() => isBoosting;
-        public float GetBoostCooldownPercent() => 1f - (boostCooldownTimer / boostCooldown);
-    }
+        public float GetBoostCooldownPercent() => boostCooldownTimer > 0 ? 1f - (boostCooldownTimer / boostCooldown) : 1f;    }
 }

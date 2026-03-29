@@ -297,6 +297,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6bf0e69486efcd94ca9c129100832192, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VectorSkiesVR.FlightController
+  controlMode: 1
   baseSpeed: 20
   maxSpeed: 60
   minSpeed: 5
@@ -545,15 +546,23 @@ MonoBehaviour:
   chunksAhead: 5
   chunksBehind: 2
   chunkSize: 100
-  towersPerChunk: 20
+  blockSize: 25
+  roadWidth: 8
+  blocksPerRow: 4
+  buildingDensity: 0.85
   minTowerWidth: 8
   maxTowerWidth: 20
   minTowerHeight: 30
   maxTowerHeight: 100
-  minSpacing: 15
+  buildingPadding: 2
   cyanProbability: 0.7
   purpleProbability: 0.2
   wireframeMaterial: {fileID: 2100000, guid: 8434462f3c07b2c4a8ee2e78ba6dd596, type: 2}
+  roadMaterial: {fileID: 0}
+  roadDepth: 2
+  roadSideAngle: 75
+  roadSurfaceColor: {r: 0.02, g: 0.02, b: 0.02, a: 1}
+  roadSideColor: {r: 0.04, g: 0.04, b: 0.04, a: 1}
   playerTransform: {fileID: 1094994387}
 --- !u!1 &1229380995
 GameObject:
@@ -599,6 +608,7 @@ GameObject:
   - component: {fileID: 1289863315}
   - component: {fileID: 1289863314}
   - component: {fileID: 1289863313}
+  - component: {fileID: 1289863316}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -789,6 +799,50 @@ Camera:
   m_OcclusionCulling: 1
   m_StereoConvergence: 10
   m_StereoSeparation: 0.022
+--- !u!114 &1289863316
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1289863311}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalCameraData
+  m_RenderShadows: 1
+  m_RequiresDepthTextureOption: 2
+  m_RequiresOpaqueTextureOption: 2
+  m_CameraType: 0
+  m_Cameras: []
+  m_RendererIndex: -1
+  m_VolumeLayerMask:
+    serializedVersion: 2
+    m_Bits: 1
+  m_VolumeTrigger: {fileID: 0}
+  m_VolumeFrameworkUpdateModeOption: 2
+  m_RenderPostProcessing: 0
+  m_Antialiasing: 0
+  m_AntialiasingQuality: 2
+  m_StopNaN: 0
+  m_Dithering: 0
+  m_ClearDepth: 1
+  m_AllowXRRendering: 1
+  m_AllowHDROutput: 1
+  m_UseScreenCoordOverride: 0
+  m_ScreenSizeOverride: {x: 0, y: 0, z: 0, w: 0}
+  m_ScreenCoordScaleBias: {x: 0, y: 0, z: 0, w: 0}
+  m_RequiresDepthTexture: 0
+  m_RequiresColorTexture: 0
+  m_TaaSettings:
+    m_Quality: 3
+    m_FrameInfluence: 0.1
+    m_JitterScale: 1
+    m_MipBias: 0
+    m_VarianceClampScale: 0.9
+    m_ContrastAdaptiveSharpening: 0
+  m_Version: 2
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

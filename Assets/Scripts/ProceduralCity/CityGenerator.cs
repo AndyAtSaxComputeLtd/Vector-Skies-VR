@@ -44,10 +44,8 @@ namespace VectorSkiesVR.ProceduralCity
         [Header("Road Visuals")]
         [SerializeField] private float roadDepth = 2f; // How deep roads are below building level
         [SerializeField] private float roadSideAngle = 75f; // Angle of road sides in degrees
-        [SerializeField] private float roadEdgeThickness = 0.2f; // Neon edge line thickness
         [SerializeField] private Color roadSurfaceColor = new Color(0.02f, 0.02f, 0.02f, 1f); // Dark road surface
         [SerializeField] private Color roadSideColor = new Color(0.04f, 0.04f, 0.04f, 1f); // Slightly lighter for sides
-        [SerializeField] private Color roadLineColor = new Color(0f, 0.8f, 1f, 1f); // Cyan edge lines
         
         [Header("References")]
         [SerializeField] private Transform playerTransform;
@@ -340,26 +338,275 @@ namespace VectorSkiesVR.ProceduralCity
             float totalWidth = (blocksPerRow * blockSize) + ((blocksPerRow - 1) * roadWidth);
             float startX = -totalWidth * 0.5f;
             
-            // Generate horizontal roads (running along Z axis)
+            // Calculate all road positions
+            List<float> horizontalRoadZPositions = new List<float>();
+            List<float> verticalRoadXPositions = new List<float>();
+            
+            // Horizontal roads (running along X axis)
             for (int row = 0; row < blocksInChunk; row++)
             {
                 float roadZ = chunkZ + (row * (blockSize + roadWidth)) + blockSize;
                 
                 if (row < blocksInChunk - 1 || chunkZ + chunkSize > roadZ + roadWidth)
                 {
-                    Vector3 roadPos = new Vector3(0, -roadDepth + 0.01f, roadZ + roadWidth * 0.5f);
-                    CreateRoadSegment(chunk, roadPos, totalWidth + roadWidth, roadWidth, true);
+                    horizontalRoadZPositions.Add(roadZ);
                 }
             }
             
-            // Generate vertical roads (running along X axis)  
+            // Vertical roads (running along Z axis)
             for (int col = 0; col < blocksPerRow - 1; col++)
             {
                 float roadX = startX + ((col + 1) * blockSize) + (col * roadWidth);
-                
-                Vector3 roadPos = new Vector3(roadX + roadWidth * 0.5f, -roadDepth + 0.01f, chunkZ + chunkSize * 0.5f);
-                CreateRoadSegment(chunk, roadPos, roadWidth, chunkSize, false);
+                verticalRoadXPositions.Add(roadX);
             }
+            
+            // Generate horizontal road segments (cut at vertical road intersections)
+            foreach (float roadZ in horizontalRoadZPositions)
+            {
+                if (verticalRoadXPositions.Count == 0)
+                {
+                    // No vertical roads, create full horizontal road
+                    Vector3 roadPos = new Vector3(0, -roadDepth + 0.01f, roadZ + roadWidth * 0.5f);
+                    CreateRoadSegment(chunk, roadPos, totalWidth + roadWidth, roadWidth, true);
+                }
+                else
+                {
+                    // Create segments between vertical roads
+                    float startXPos = -(totalWidth + roadWidth) * 0.5f;
+                    
+                    for (int i = 0; i <= verticalRoadXPositions.Count; i++)
+                    {
+                        float segmentStartX, segmentEndX;
+                        
+                        if (i == 0)
+                        {
+                            // First segment: from edge to first vertical road
+                            segmentStartX = startXPos;
+                            segmentEndX = verticalRoadXPositions[0];
+                        }
+                        else if (i == verticalRoadXPositions.Count)
+                        {
+                            // Last segment: from last vertical road to edge
+                            segmentStartX = verticalRoadXPositions[i - 1] + roadWidth;
+                            segmentEndX = -startXPos;
+                        }
+                        else
+                        {
+                            // Middle segments: between vertical roads
+                            segmentStartX = verticalRoadXPositions[i - 1] + roadWidth;
+                            segmentEndX = verticalRoadXPositions[i];
+                        }
+                        
+                        float segmentWidth = segmentEndX - segmentStartX;
+                        if (segmentWidth > 0.1f) // Only create if segment is large enough
+                        {
+                            Vector3 roadPos = new Vector3(
+                                segmentStartX + segmentWidth * 0.5f,
+                                -roadDepth + 0.01f,
+                                roadZ + roadWidth * 0.5f
+                            );
+                            CreateRoadSegment(chunk, roadPos, segmentWidth, roadWidth, true);
+                        }
+                    }
+                }
+            }
+            
+            // Generate vertical road segments (cut at horizontal road intersections)
+            foreach (float roadX in verticalRoadXPositions)
+            {
+                if (horizontalRoadZPositions.Count == 0)
+                {
+                    // No horizontal roads, create full vertical road
+                    Vector3 roadPos = new Vector3(roadX + roadWidth * 0.5f, -roadDepth + 0.01f, chunkZ + chunkSize * 0.5f);
+                    CreateRoadSegment(chunk, roadPos, roadWidth, chunkSize, false);
+                }
+                else
+                {
+                    // Create segments between horizontal roads
+                    float startZPos = chunkZ;
+                    float endZPos = chunkZ + chunkSize;
+                    
+                    for (int i = 0; i <= horizontalRoadZPositions.Count; i++)
+                    {
+                        float segmentStartZ, segmentEndZ;
+                        
+                        if (i == 0)
+                        {
+                            // First segment: from chunk start to first horizontal road
+                            segmentStartZ = startZPos;
+                            if (horizontalRoadZPositions[0] >= startZPos && horizontalRoadZPositions[0] < endZPos)
+                                segmentEndZ = horizontalRoadZPositions[0];
+                            else
+                                continue;
+                        }
+                        else if (i == horizontalRoadZPositions.Count)
+                        {
+                            // Last segment: from last horizontal road to chunk end
+                            if (horizontalRoadZPositions[i - 1] >= startZPos && horizontalRoadZPositions[i - 1] < endZPos)
+                            {
+                                segmentStartZ = horizontalRoadZPositions[i - 1] + roadWidth;
+                                segmentEndZ = endZPos;
+                            }
+                            else
+                                continue;
+                        }
+                        else
+                        {
+                            // Middle segments: between horizontal roads
+                            if (horizontalRoadZPositions[i - 1] >= startZPos && horizontalRoadZPositions[i] < endZPos)
+                            {
+                                segmentStartZ = horizontalRoadZPositions[i - 1] + roadWidth;
+                                segmentEndZ = horizontalRoadZPositions[i];
+                            }
+                            else
+                                continue;
+                        }
+                        
+                        float segmentLength = segmentEndZ - segmentStartZ;
+                        if (segmentLength > 0.1f) // Only create if segment is large enough
+                        {
+                            Vector3 roadPos = new Vector3(
+                                roadX + roadWidth * 0.5f,
+                                -roadDepth + 0.01f,
+                                segmentStartZ + segmentLength * 0.5f
+                            );
+                            CreateRoadSegment(chunk, roadPos, roadWidth, segmentLength, false);
+                        }
+                    }
+                }
+            }
+            
+            // Generate intersections
+            foreach (float roadZ in horizontalRoadZPositions)
+            {
+                foreach (float roadX in verticalRoadXPositions)
+                {
+                    Vector3 intersectionPos = new Vector3(
+                        roadX + roadWidth * 0.5f,
+                        -roadDepth + 0.01f,
+                        roadZ + roadWidth * 0.5f
+                    );
+                    CreateIntersection(chunk, intersectionPos, roadWidth);
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Create an intersection mesh where roads cross
+        /// </summary>
+        private void CreateIntersection(CityChunk chunk, Vector3 position, float size)
+        {
+            GameObject intersectionObj = Instantiate(roadPrefab, position, Quaternion.identity, chunk.chunkObject.transform);
+            intersectionObj.SetActive(true);
+            intersectionObj.name = $"Intersection_{chunk.roads.Count}";
+            
+            MeshFilter meshFilter = intersectionObj.GetComponent<MeshFilter>();
+            MeshRenderer meshRenderer = intersectionObj.GetComponent<MeshRenderer>();
+            
+            // Generate intersection mesh (square with sloped walls on all 4 sides)
+            Mesh intersectionMesh = GenerateIntersectionMesh(size, size);
+            meshFilter.mesh = intersectionMesh;
+            
+            // Apply material
+            if (roadMaterial != null)
+            {
+                meshRenderer.material = roadMaterial;
+            }
+            else if (wireframeMaterial != null)
+            {
+                meshRenderer.material = wireframeMaterial;
+            }
+            
+            meshRenderer.receiveShadows = false;
+            meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            
+            chunk.roads.Add(intersectionObj);
+        }
+        
+        /// <summary>
+        /// Generate intersection mesh with corner walls to connect road segments
+        /// </summary>
+        private Mesh GenerateIntersectionMesh(float width, float length)
+        {
+            Mesh mesh = new Mesh();
+            mesh.name = "IntersectionMesh";
+            
+            float halfWidth = width * 0.5f;
+            float halfLength = length * 0.5f;
+            
+            // Calculate side wall offset
+            float angleFromHorizontal = 90f - roadSideAngle;
+            float sideOffset = roadDepth * Mathf.Tan(angleFromHorizontal * Mathf.Deg2Rad);
+            
+            // Create surface + corner walls
+            // Surface covers the intersection to prevent Z-fighting where road surfaces overlap
+            // Surface (4) + 4 corner walls (3 verts each = 12)
+            Vector3[] vertices = new Vector3[4 + 12];
+            Color[] colors = new Color[vertices.Length];
+            
+            // Intersection surface at bottom (slightly higher than road segments to prevent Z-fighting)
+            float surfaceY = 0.02f;
+            vertices[0] = new Vector3(-halfWidth, surfaceY, -halfLength);
+            vertices[1] = new Vector3(halfWidth, surfaceY, -halfLength);
+            vertices[2] = new Vector3(halfWidth, surfaceY, halfLength);
+            vertices[3] = new Vector3(-halfWidth, surfaceY, halfLength);
+            
+            colors[0] = colors[1] = colors[2] = colors[3] = roadSurfaceColor;
+            
+            // 4 corner walls to fill gaps between road segments
+            // Each corner is a triangle from bottom corner to two top edges
+            int cornerStart = 4;
+            
+            // Front-left corner
+            vertices[cornerStart + 0] = new Vector3(-halfWidth, 0, -halfLength); // Bottom corner
+            vertices[cornerStart + 1] = new Vector3(-halfWidth - sideOffset, roadDepth, -halfLength); // Top left edge
+            vertices[cornerStart + 2] = new Vector3(-halfWidth, roadDepth, -halfLength - sideOffset); // Top front edge
+            
+            // Front-right corner
+            vertices[cornerStart + 3] = new Vector3(halfWidth, 0, -halfLength); // Bottom corner
+            vertices[cornerStart + 4] = new Vector3(halfWidth, roadDepth, -halfLength - sideOffset); // Top front edge
+            vertices[cornerStart + 5] = new Vector3(halfWidth + sideOffset, roadDepth, -halfLength); // Top right edge
+            
+            // Back-right corner
+            vertices[cornerStart + 6] = new Vector3(halfWidth, 0, halfLength); // Bottom corner
+            vertices[cornerStart + 7] = new Vector3(halfWidth + sideOffset, roadDepth, halfLength); // Top right edge
+            vertices[cornerStart + 8] = new Vector3(halfWidth, roadDepth, halfLength + sideOffset); // Top back edge
+            
+            // Back-left corner
+            vertices[cornerStart + 9] = new Vector3(-halfWidth, 0, halfLength); // Bottom corner
+            vertices[cornerStart + 10] = new Vector3(-halfWidth, roadDepth, halfLength + sideOffset); // Top back edge
+            vertices[cornerStart + 11] = new Vector3(-halfWidth - sideOffset, roadDepth, halfLength); // Top left edge
+            
+            // Set corner wall colors
+            for (int i = cornerStart; i < cornerStart + 12; i++)
+            {
+                colors[i] = roadSideColor;
+            }
+            
+            // Triangles: surface (2) + 4 corner triangles (4)
+            int[] triangles = new int[6 + 12];
+            int triIndex = 0;
+            
+            // Surface triangles
+            triangles[triIndex++] = 0; triangles[triIndex++] = 2; triangles[triIndex++] = 1;
+            triangles[triIndex++] = 0; triangles[triIndex++] = 3; triangles[triIndex++] = 2;
+            
+            // 4 corner walls
+            for (int i = 0; i < 4; i++)
+            {
+                int baseIdx = cornerStart + (i * 3);
+                triangles[triIndex++] = baseIdx + 0;
+                triangles[triIndex++] = baseIdx + 1;
+                triangles[triIndex++] = baseIdx + 2;
+            }
+            
+            mesh.vertices = vertices;
+            mesh.triangles = triangles;
+            mesh.colors = colors;
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            
+            return mesh;
         }
         
         /// <summary>
@@ -375,7 +622,7 @@ namespace VectorSkiesVR.ProceduralCity
             MeshRenderer meshRenderer = roadObj.GetComponent<MeshRenderer>();
             
             // Generate road mesh
-            Mesh roadMesh = GenerateRoadMesh(width, length);
+            Mesh roadMesh = GenerateRoadMesh(width, length, horizontal);
             meshFilter.mesh = roadMesh;
             
             // Apply material
@@ -395,17 +642,16 @@ namespace VectorSkiesVR.ProceduralCity
         }
         
         /// <summary>
-        /// Generate road mesh with dark surface, sloped sides, and neon edge lines
+        /// Generate road mesh with dark surface and sloped side walls
         /// Roads are trenches with angled walls for flight corridors
         /// </summary>
-        private Mesh GenerateRoadMesh(float width, float length)
+        private Mesh GenerateRoadMesh(float width, float length, bool horizontal)
         {
             Mesh mesh = new Mesh();
             mesh.name = "RoadMesh";
             
             float halfWidth = width * 0.5f;
             float halfLength = length * 0.5f;
-            float edgeThick = roadEdgeThickness * 0.5f;
             
             // Calculate side wall offset based on angle
             // 75 degrees from vertical = 15 degrees from horizontal
@@ -414,13 +660,11 @@ namespace VectorSkiesVR.ProceduralCity
             
             // Vertices needed:
             // Road surface: 4 vertices
-            // Two side walls (long sides): 2 * 4 vertices each = 8
-            // Neon edge lines on top: 4 edges * 8 vertices = 32
+            // Two side walls: 2 * 4 vertices each = 8
             int surfaceVertCount = 4;
             int sideWallVertCount = 8; // 2 walls * 4 verts each
-            int edgeVertCount = 4 * 8;
             
-            Vector3[] vertices = new Vector3[surfaceVertCount + sideWallVertCount + edgeVertCount];
+            Vector3[] vertices = new Vector3[surfaceVertCount + sideWallVertCount];
             Color[] colors = new Color[vertices.Length];
             
             // Road surface vertices (at bottom of trench)
@@ -432,56 +676,74 @@ namespace VectorSkiesVR.ProceduralCity
             colors[0] = colors[1] = colors[2] = colors[3] = roadSurfaceColor;
             
             // Side wall vertices (sloped at 75 degrees)
-            // Left wall (along -X side, runs along Z)
-            int leftWallStart = 4;
-            vertices[leftWallStart + 0] = new Vector3(-halfWidth, 0, -halfLength); // Bottom front
-            vertices[leftWallStart + 1] = new Vector3(-halfWidth, 0, halfLength);  // Bottom back
-            vertices[leftWallStart + 2] = new Vector3(-halfWidth - sideOffset, roadDepth, halfLength);  // Top back
-            vertices[leftWallStart + 3] = new Vector3(-halfWidth - sideOffset, roadDepth, -halfLength); // Top front
+            // Walls are perpendicular to road direction
+            int wall1Start = 4;
+            int wall2Start = 8;
             
-            colors[leftWallStart + 0] = colors[leftWallStart + 1] = colors[leftWallStart + 2] = colors[leftWallStart + 3] = roadSideColor;
+            if (!horizontal)
+            {
+                // Vertical road (runs along Z): walls on left (-X) and right (+X) sides
+                // Left wall
+                vertices[wall1Start + 0] = new Vector3(-halfWidth, 0, -halfLength); // Bottom front
+                vertices[wall1Start + 1] = new Vector3(-halfWidth, 0, halfLength);  // Bottom back
+                vertices[wall1Start + 2] = new Vector3(-halfWidth - sideOffset, roadDepth, halfLength);  // Top back
+                vertices[wall1Start + 3] = new Vector3(-halfWidth - sideOffset, roadDepth, -halfLength); // Top front
+                
+                // Right wall
+                vertices[wall2Start + 0] = new Vector3(halfWidth, 0, -halfLength); // Bottom front
+                vertices[wall2Start + 1] = new Vector3(halfWidth, 0, halfLength);  // Bottom back
+                vertices[wall2Start + 2] = new Vector3(halfWidth + sideOffset, roadDepth, halfLength);  // Top back
+                vertices[wall2Start + 3] = new Vector3(halfWidth + sideOffset, roadDepth, -halfLength); // Top front
+            }
+            else
+            {
+                // Horizontal road (runs along X): walls on front (-Z) and back (+Z) sides
+                // Front wall (runs along X)
+                vertices[wall1Start + 0] = new Vector3(-halfWidth, 0, -halfLength); // Bottom left
+                vertices[wall1Start + 1] = new Vector3(halfWidth, 0, -halfLength);  // Bottom right
+                vertices[wall1Start + 2] = new Vector3(halfWidth, roadDepth, -halfLength - sideOffset);  // Top right
+                vertices[wall1Start + 3] = new Vector3(-halfWidth, roadDepth, -halfLength - sideOffset); // Top left
+                
+                // Back wall (runs along X)
+                vertices[wall2Start + 0] = new Vector3(-halfWidth, 0, halfLength); // Bottom left
+                vertices[wall2Start + 1] = new Vector3(halfWidth, 0, halfLength);  // Bottom right
+                vertices[wall2Start + 2] = new Vector3(halfWidth, roadDepth, halfLength + sideOffset);  // Top right
+                vertices[wall2Start + 3] = new Vector3(-halfWidth, roadDepth, halfLength + sideOffset); // Top left
+            }
             
-            // Right wall (along +X side, runs along Z)
-            int rightWallStart = 8;
-            vertices[rightWallStart + 0] = new Vector3(halfWidth, 0, -halfLength); // Bottom front
-            vertices[rightWallStart + 1] = new Vector3(halfWidth, 0, halfLength);  // Bottom back
-            vertices[rightWallStart + 2] = new Vector3(halfWidth + sideOffset, roadDepth, halfLength);  // Top back
-            vertices[rightWallStart + 3] = new Vector3(halfWidth + sideOffset, roadDepth, -halfLength); // Top front
+            colors[wall1Start + 0] = colors[wall1Start + 1] = colors[wall1Start + 2] = colors[wall1Start + 3] = roadSideColor;
+            colors[wall2Start + 0] = colors[wall2Start + 1] = colors[wall2Start + 2] = colors[wall2Start + 3] = roadSideColor;
             
-            colors[rightWallStart + 0] = colors[rightWallStart + 1] = colors[rightWallStart + 2] = colors[rightWallStart + 3] = roadSideColor;
-            
-            // Triangles: surface (2 tris) + 2 side walls (2 tris each) + edge lines (36 tris each * 4)
-            int[] triangles = new int[6 + 12 + (4 * 36)];
+            // Triangles: surface (2 tris) + 2 side walls (2 tris each)
+            int[] triangles = new int[6 + 12];
             int triIndex = 0;
             
             // Road surface triangles
             triangles[triIndex++] = 0; triangles[triIndex++] = 2; triangles[triIndex++] = 1;
             triangles[triIndex++] = 0; triangles[triIndex++] = 3; triangles[triIndex++] = 2;
             
-            // Left wall triangles
-            triangles[triIndex++] = leftWallStart + 0; triangles[triIndex++] = leftWallStart + 2; triangles[triIndex++] = leftWallStart + 1;
-            triangles[triIndex++] = leftWallStart + 0; triangles[triIndex++] = leftWallStart + 3; triangles[triIndex++] = leftWallStart + 2;
-            
-            // Right wall triangles
-            triangles[triIndex++] = rightWallStart + 0; triangles[triIndex++] = rightWallStart + 1; triangles[triIndex++] = rightWallStart + 2;
-            triangles[triIndex++] = rightWallStart + 0; triangles[triIndex++] = rightWallStart + 2; triangles[triIndex++] = rightWallStart + 3;
-            
-            int vertIndex = 12;
-            
-            // Neon edge lines along top of walls
-            Vector3[] topCorners = new Vector3[] {
-                new Vector3(-halfWidth - sideOffset, roadDepth, -halfLength),
-                new Vector3(halfWidth + sideOffset, roadDepth, -halfLength),
-                new Vector3(halfWidth + sideOffset, roadDepth, halfLength),
-                new Vector3(-halfWidth - sideOffset, roadDepth, halfLength)
-            };
-            
-            for (int i = 0; i < 4; i++)
+            // Wall triangles (winding order depends on orientation)
+            if (!horizontal)
             {
-                Vector3 start = topCorners[i];
-                Vector3 end = topCorners[(i + 1) % 4];
+                // Vertical roads: walls on ±X sides
+                // Wall 1 (left)
+                triangles[triIndex++] = wall1Start + 0; triangles[triIndex++] = wall1Start + 2; triangles[triIndex++] = wall1Start + 1;
+                triangles[triIndex++] = wall1Start + 0; triangles[triIndex++] = wall1Start + 3; triangles[triIndex++] = wall1Start + 2;
                 
-                AddRoadEdge(start, end, edgeThick, ref vertices, ref triangles, ref colors, ref vertIndex, ref triIndex);
+                // Wall 2 (right)
+                triangles[triIndex++] = wall2Start + 0; triangles[triIndex++] = wall2Start + 1; triangles[triIndex++] = wall2Start + 2;
+                triangles[triIndex++] = wall2Start + 0; triangles[triIndex++] = wall2Start + 2; triangles[triIndex++] = wall2Start + 3;
+            }
+            else
+            {
+                // Horizontal roads: walls on ±Z sides
+                // Wall 1 (front)
+                triangles[triIndex++] = wall1Start + 0; triangles[triIndex++] = wall1Start + 1; triangles[triIndex++] = wall1Start + 2;
+                triangles[triIndex++] = wall1Start + 0; triangles[triIndex++] = wall1Start + 2; triangles[triIndex++] = wall1Start + 3;
+                
+                // Wall 2 (back)
+                triangles[triIndex++] = wall2Start + 0; triangles[triIndex++] = wall2Start + 2; triangles[triIndex++] = wall2Start + 1;
+                triangles[triIndex++] = wall2Start + 0; triangles[triIndex++] = wall2Start + 3; triangles[triIndex++] = wall2Start + 2;
             }
             
             mesh.vertices = vertices;
@@ -491,61 +753,6 @@ namespace VectorSkiesVR.ProceduralCity
             mesh.RecalculateBounds();
             
             return mesh;
-        }
-        
-        /// <summary>
-        /// Add a neon edge line to road top edge
-        /// </summary>
-        private void AddRoadEdge(Vector3 start, Vector3 end, float thickness,
-                                 ref Vector3[] vertices, ref int[] triangles, ref Color[] colors,
-                                 ref int vertIndex, ref int triIndex)
-        {
-            Vector3 direction = (end - start).normalized;
-            Vector3 perpendicular = Vector3.Cross(direction, Vector3.up).normalized;
-            Vector3 offset = perpendicular * thickness;
-            Vector3 heightOffset = Vector3.up * 0.02f;
-            
-            // Create thin box for edge line (already at correct height)
-            vertices[vertIndex + 0] = start - offset + heightOffset;
-            vertices[vertIndex + 1] = start + offset + heightOffset;
-            vertices[vertIndex + 2] = end + offset + heightOffset;
-            vertices[vertIndex + 3] = end - offset + heightOffset;
-            vertices[vertIndex + 4] = start - offset;
-            vertices[vertIndex + 5] = start + offset;
-            vertices[vertIndex + 6] = end + offset;
-            vertices[vertIndex + 7] = end - offset;
-            
-            for (int i = 0; i < 8; i++)
-            {
-                colors[vertIndex + i] = roadLineColor;
-            }
-            
-            // Top face
-            triangles[triIndex++] = vertIndex + 0;
-            triangles[triIndex++] = vertIndex + 2;
-            triangles[triIndex++] = vertIndex + 1;
-            triangles[triIndex++] = vertIndex + 0;
-            triangles[triIndex++] = vertIndex + 3;
-            triangles[triIndex++] = vertIndex + 2;
-            
-            // Side faces (4 sides * 2 triangles each = 8 triangles = 24 indices)
-            triangles[triIndex++] = vertIndex + 0; triangles[triIndex++] = vertIndex + 1; triangles[triIndex++] = vertIndex + 5;
-            triangles[triIndex++] = vertIndex + 0; triangles[triIndex++] = vertIndex + 5; triangles[triIndex++] = vertIndex + 4;
-            
-            triangles[triIndex++] = vertIndex + 1; triangles[triIndex++] = vertIndex + 2; triangles[triIndex++] = vertIndex + 6;
-            triangles[triIndex++] = vertIndex + 1; triangles[triIndex++] = vertIndex + 6; triangles[triIndex++] = vertIndex + 5;
-            
-            triangles[triIndex++] = vertIndex + 2; triangles[triIndex++] = vertIndex + 3; triangles[triIndex++] = vertIndex + 7;
-            triangles[triIndex++] = vertIndex + 2; triangles[triIndex++] = vertIndex + 7; triangles[triIndex++] = vertIndex + 6;
-            
-            triangles[triIndex++] = vertIndex + 3; triangles[triIndex++] = vertIndex + 0; triangles[triIndex++] = vertIndex + 4;
-            triangles[triIndex++] = vertIndex + 3; triangles[triIndex++] = vertIndex + 4; triangles[triIndex++] = vertIndex + 7;
-            
-            // Bottom face
-            triangles[triIndex++] = vertIndex + 4; triangles[triIndex++] = vertIndex + 5; triangles[triIndex++] = vertIndex + 6;
-            triangles[triIndex++] = vertIndex + 4; triangles[triIndex++] = vertIndex + 6; triangles[triIndex++] = vertIndex + 7;
-            
-            vertIndex += 8;
         }
         
         /// <summary>
